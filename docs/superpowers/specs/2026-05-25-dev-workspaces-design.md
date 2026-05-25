@@ -50,7 +50,9 @@ Built locally from `images/Dockerfile.base` in this repo (parallels
 installed per-project by the user.
 
 Contents:
-- **Shell/CLI:** bash, ripgrep, fd, bat, fzf, jq, tree, git, starship
+- **Shell/CLI:** bash, ripgrep, fd, bat, fzf, jq, tree, git, starship, just
+  (`just` installed via `curl --proto '=https' --tlsv1.2 -sSf
+  https://just.systems/install.sh | bash -s -- --to /usr/local/bin`)
 - **Python:** `uv` via `curl -LsSf https://astral.sh/uv/install.sh | sh`
 - **Node:** `nvm` v0.40.4 via the official install script; `pnpm` via corepack
 - **Agents:** `npm install -g --ignore-scripts @earendil-works/pi-coding-agent`
