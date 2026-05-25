@@ -22,8 +22,7 @@ case "$eco" in
     meta=$(curl -fsSL "https://registry.npmjs.org/${pkg}") || { echo "pkg-age-check: cannot fetch $pkg" >&2; exit 1; }
     if [ -n "$ver" ]; then
       published=$(printf '%s' "$meta" | jq -r --arg v "$ver" '.time[$v] // empty')
-    fi
-    if [ -z "$published" ]; then
+    else
       latest=$(printf '%s' "$meta" | jq -r '."dist-tags".latest')
       published=$(printf '%s' "$meta" | jq -r --arg v "$latest" '.time[$v] // empty')
     fi
@@ -32,8 +31,7 @@ case "$eco" in
     meta=$(curl -fsSL "https://pypi.org/pypi/${pkg}/json") || { echo "pkg-age-check: cannot fetch $pkg" >&2; exit 1; }
     if [ -n "$ver" ]; then
       published=$(printf '%s' "$meta" | jq -r --arg v "$ver" '.releases[$v][0].upload_time_iso_8601 // empty')
-    fi
-    if [ -z "$published" ]; then
+    else
       published=$(printf '%s' "$meta" | jq -r '.urls[0].upload_time_iso_8601 // empty')
     fi
     ;;
