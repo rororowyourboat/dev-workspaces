@@ -59,6 +59,9 @@ Contents:
   and the Claude Code CLI
 - **npm hardening:** `npm config set ignore-scripts true` globally (mirrors
   host `~/.npmrc`)
+- **Secret-leak guard:** `gitleaks` installed; used by the template pre-commit
+  hook (see §6)
+- **Package-age guard:** `pkg-age-check` script + shell shims (see §7)
 
 No per-language variants. No `op` CLI inside (secrets injected from host).
 
@@ -77,6 +80,10 @@ make it a workspace. Contains:
   - `customizations.vscode.settings`: `git.enableCommitSigning=false`,
     `telemetry.telemetryLevel=off`, default bash profile
   - `containerEnv`: `NPM_CONFIG_IGNORE_SCRIPTS=true`
+  - **Persistent caches** (§5): named-volume `mounts` for uv/pnpm/npm/bun caches
+  - **Dotfiles** (§8): read-only mount of host shell config
+  - **Egress firewall** (§9, opt-in): `--cap-add=NET_ADMIN` + `postCreateCommand`
+    running `init-firewall.sh` when enabled
 
 - **`AGENTS.md`** dropped at the **project root** with standing rules:
   - Never store secrets in unencrypted form; no plaintext `.env` files —
@@ -114,6 +121,54 @@ host-side `op inject` → `--remote-env`, nothing persisted.)
   the secret snippet above when secrets are needed
 - `docker stop` / `docker rm` the named container to tear down
 
+### 5. Persistent tool caches
+
+Per-workspace **named volumes** (not shared across workspaces, to avoid
+cross-client cache contamination) mounted at the in-container cache paths so
+rebuilds/installs are fast and survive container removal:
+
+- `~/.cache/uv`, pnpm store (`~/.local/share/pnpm/store`), `~/.npm`,
+  `~/.cache/bun`
+
+Volume names follow the workspace (e.g. `<workspace>-uv-cache`). Caches are
+the only persisted state besides the bind-mounted project dir.
+
+### 6. Secret-leak pre-commit
+
+The template ships a `pre-commit` hook running **`gitleaks`** (baked into the
+base image) against staged changes, blocking commits that contain detectable
+secrets. Defense-in-depth on top of the "no plaintext secrets" rule.
+
+### 7. Package-age guard (enforced, not just documented)
+
+A `pkg-age-check` script queries the registry publish date for a package and
+**fails if it was published ≤ 5 days ago**. Wired in as thin shell shims for
+the install commands (`uv add`, `npm install`, `pnpm add`) so the rule is
+enforced at install time, not just stated in `AGENTS.md`. Best-effort: covers
+the common add paths; transitive deps are not fully gated. Finalized in
+implementation.
+
+### 8. Dotfiles — "feels like home"
+
+Host shell config is **mounted read-only** into the container so the prompt
+and shortcuts match the host:
+
+- `~/.config/starship.toml` → read-only mount
+- A curated bash aliases/profile fragment sourced by the container's bash
+
+Read-only mount (not a copy) keeps host as the single source of truth; no
+secrets are in these files.
+
+### 9. Egress allowlist firewall (opt-in per workspace)
+
+Default workspaces are network-on. A workspace may opt into a locked-down
+egress allowlist (adapted from Anthropic's devcontainer `init-firewall.sh`):
+default-deny outbound, allow only an allowlist (npm, PyPI, GitHub, the
+client's own APIs). Trade-off: requires `--cap-add=NET_ADMIN`, which
+partially relaxes the `--cap-drop=ALL` hardening — so it's opt-in per client,
+chosen when egress control matters more than minimal capabilities. The
+allowlist is a per-workspace config file.
+
 ## Migration of existing devcontainers
 
 | Project | Action |
@@ -131,8 +186,10 @@ Nothing deleted blindly. App-specific stacks are preserved.
 - A custom `ws` lifecycle wrapper
 - Per-language base image variants
 - `op` CLI inside containers
-- Automated enforcement of the 5-day package-age rule (documented in
-  `AGENTS.md`, not machine-enforced yet)
+- A `ws-<org>-<project>` naming convention + tracked `workspaces.md` registry
+  (declined for now)
+- Full gating of *transitive* deps by the 5-day rule (only direct-add paths
+  are enforced)
 - Changes to the existing `~/.config/bash/sandbox.sh` ephemeral sandboxes
 
 ## Repository layout
@@ -141,8 +198,12 @@ Nothing deleted blindly. App-specific stacks are preserved.
 personal/dev-workspaces/
   README.md                      # usage, secret snippet, commands
   images/Dockerfile.base         # workspace-base:latest
+  images/init-firewall.sh        # opt-in egress allowlist (§9)
+  scripts/pkg-age-check          # 5-day package-age guard (§7)
   template/.devcontainer/
     devcontainer.json
+  template/.githooks/pre-commit  # gitleaks secret scan (§6)
   template/AGENTS.md             # standing safety/preference rules
+  dotfiles/                      # starship.toml, bash fragment (§8, mounted RO)
   docs/superpowers/specs/        # this design doc + future specs
 ```
