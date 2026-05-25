@@ -620,7 +620,10 @@ Run:
 TMP=$(mktemp -d); cd "$TMP"; git init -q
 cp ~/Documents/Github/personal/dev-workspaces/template/.githooks/pre-commit .git/hooks/pre-commit
 chmod +x .git/hooks/pre-commit
-printf 'aws_secret=AKIAIOSFODNN7EXAMPLE\nkey="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"\n' > creds.txt
+# Use a fixture gitleaks actually flags — AWS *documentation example* keys
+# (AKIAIOSFODNN7EXAMPLE) are allowlisted in gitleaks' default ruleset and will
+# NOT trigger. A synthetic GitHub PAT shape does:
+printf 'token=ghp_0123456789abcdefghijklmnopqrstuvwxyz\n' > creds.txt
 git add creds.txt
 docker run --rm -v "$TMP:/w" -w /w workspace-base:latest \
   gitleaks protect --staged --redact --no-banner; echo "exit=$?"
