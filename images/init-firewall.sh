@@ -12,15 +12,38 @@ command -v iptables >/dev/null || { echo "iptables missing; install in image or 
 iptables -F OUTPUT
 iptables -P OUTPUT DROP
 iptables -A OUTPUT -o lo -j ACCEPT
+  # DNS to any resolver (Docker's embedded resolver is dynamic; pinning is
+  # fragile). Note: this leaves a theoretical DNS-tunnel exfil channel open.
 iptables -A OUTPUT -p udp --dport 53 -j ACCEPT      # DNS
 iptables -A OUTPUT -p tcp --dport 53 -j ACCEPT
 iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
 
+# IPv6: default-deny. Allowlist hosts are resolved as IPv4 only, so no v6
+# allow-rules are added — this prevents IPv6 egress from bypassing the allowlist.
+if command -v ip6tables >/dev/null 2>&1; then
+  ip6tables -F OUTPUT
+  ip6tables -P OUTPUT DROP
+  ip6tables -A OUTPUT -o lo -j ACCEPT
+  ip6tables -A OUTPUT -p udp --dport 53 -j ACCEPT
+  ip6tables -A OUTPUT -p tcp --dport 53 -j ACCEPT
+  ip6tables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+fi
+
 hosts=("${DEFAULT_HOSTS[@]}")
-[ -f "$ALLOWLIST_FILE" ] && while IFS= read -r h; do [ -n "$h" ] && hosts+=("$h"); done < "$ALLOWLIST_FILE"
+if [ -f "$ALLOWLIST_FILE" ]; then
+  while IFS= read -r h; do
+    [[ "$h" =~ ^[[:space:]]*# ]] && continue   # skip comments
+    [ -n "$h" ] && hosts+=("$h")
+  done < "$ALLOWLIST_FILE"
+fi
 
 for h in "${hosts[@]}"; do
-  for ip in $(getent ahostsv4 "$h" | awk '{print $1}' | sort -u); do
+  mapfile -t ips < <(getent ahostsv4 "$h" | awk '{print $1}' | sort -u)
+  if [ "${#ips[@]}" -eq 0 ]; then
+    echo "firewall: WARNING: no IPs resolved for $h — it will be blocked" >&2
+    continue
+  fi
+  for ip in "${ips[@]}"; do
     iptables -A OUTPUT -p tcp -d "$ip" --dport 443 -j ACCEPT
     iptables -A OUTPUT -p tcp -d "$ip" --dport 80 -j ACCEPT
   done
