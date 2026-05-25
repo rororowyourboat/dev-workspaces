@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# pkg-age-check <ecosystem> <package> [version]
+# Exit 0 if the package's relevant release is OLDER than MIN_AGE_DAYS (default 5).
+# Exit 1 if it is too new or its age cannot be determined.
+set -euo pipefail
+
+MIN_AGE_DAYS="${PKG_MIN_AGE_DAYS:-5}"
+eco="${1:-}"; pkg="${2:-}"; ver="${3:-}"
+
+if [ -z "$eco" ] || [ -z "$pkg" ]; then
+  echo "usage: pkg-age-check <npm|pypi> <package> [version]" >&2
+  exit 2
+fi
+
+now_epoch=$(date -u +%s)
+iso_to_epoch() { date -u -d "$1" +%s 2>/dev/null || echo ""; }
+
+published=""
+case "$eco" in
+  npm)
+    # registry returns time map keyed by version; fall back to latest
+    meta=$(curl -fsSL "https://registry.npmjs.org/${pkg}") || { echo "pkg-age-check: cannot fetch $pkg" >&2; exit 1; }
+    if [ -n "$ver" ]; then
+      published=$(printf '%s' "$meta" | jq -r --arg v "$ver" '.time[$v] // empty')
+    fi
+    if [ -z "$published" ]; then
+      latest=$(printf '%s' "$meta" | jq -r '."dist-tags".latest')
+      published=$(printf '%s' "$meta" | jq -r --arg v "$latest" '.time[$v] // empty')
+    fi
+    ;;
+  pypi)
+    meta=$(curl -fsSL "https://pypi.org/pypi/${pkg}/json") || { echo "pkg-age-check: cannot fetch $pkg" >&2; exit 1; }
+    if [ -n "$ver" ]; then
+      published=$(printf '%s' "$meta" | jq -r --arg v "$ver" '.releases[$v][0].upload_time_iso_8601 // empty')
+    fi
+    if [ -z "$published" ]; then
+      published=$(printf '%s' "$meta" | jq -r '.urls[0].upload_time_iso_8601 // empty')
+    fi
+    ;;
+  *)
+    echo "pkg-age-check: unknown ecosystem '$eco'" >&2; exit 2 ;;
+esac
+
+if [ -z "$published" ]; then
+  echo "pkg-age-check: could not determine publish date for $pkg" >&2
+  exit 1
+fi
+
+pub_epoch=$(iso_to_epoch "$published")
+[ -z "$pub_epoch" ] && { echo "pkg-age-check: bad date '$published'" >&2; exit 1; }
+
+age_days=$(( (now_epoch - pub_epoch) / 86400 ))
+if [ "$age_days" -lt "$MIN_AGE_DAYS" ]; then
+  echo "BLOCKED: ${eco}:${pkg} published ${age_days}d ago (< ${MIN_AGE_DAYS}d minimum)" >&2
+  exit 1
+fi
+echo "ok: ${eco}:${pkg} is ${age_days}d old"
