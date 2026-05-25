@@ -18,8 +18,10 @@ iso_to_epoch() { date -u -d "$1" +%s 2>/dev/null || echo ""; }
 published=""
 case "$eco" in
   npm)
-    # registry returns time map keyed by version; fall back to latest
-    meta=$(curl -fsSL "https://registry.npmjs.org/${pkg}") || { echo "pkg-age-check: cannot fetch $pkg" >&2; exit 1; }
+    # registry returns time map keyed by version; fall back to latest.
+    # Scoped names (@scope/name) must be URL-encoded for the registry path.
+    enc_pkg="${pkg//@/%40}"; enc_pkg="${enc_pkg////%2F}"
+    meta=$(curl -fsSL "https://registry.npmjs.org/${enc_pkg}") || { echo "pkg-age-check: cannot fetch $pkg" >&2; exit 1; }
     if [ -n "$ver" ]; then
       published=$(printf '%s' "$meta" | jq -r --arg v "$ver" '.time[$v] // empty')
     else
