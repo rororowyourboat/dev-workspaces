@@ -129,7 +129,8 @@ relax capabilities to enforce egress control instead (see
 | Extra tools / deps | custom image `FROM workspace-base:latest` | — | ⚙ |
 | Prompt / dotfiles | bind `starship.toml` or `--dotfiles-repository` | minimal | ⚙ |
 | Egress allowlist | `.devcontainer/firewall/allowlist` | npm · PyPI · GitHub | ⚙ firewall profile |
-| Mesh control server | `HEADSCALE_URL` / `TS_AUTHKEY` (`--remote-env`) | — | ⚙ mesh profile |
+| Mesh join | `TS_AUTHKEY` (+ `TS_LOGIN_SERVER` for Headscale), via `--remote-env` | — | ⚙ mesh profile |
+| Mesh egress containment | `mesh-firewall` (+ `TS_CONTROL_HOSTS`) | off | 🔒 mesh profile |
 
 ## Prerequisites
 
@@ -222,6 +223,76 @@ So the firewall profile is **less hardened than the default** (in-container root
 is reachable) — its isolation guarantee comes from the locked egress allowlist
 instead of from blocking root. Pick the profile that matches your threat model:
 maximum lockdown (default) vs. controlled egress (firewall).
+
+## Mesh networking (optional)
+
+Join a workspace to a private mesh so it can reach (and be reached by) your
+other machines and services over an encrypted overlay — without publishing any
+ports to the host. The same client works with **Tailscale** (SaaS) or
+**Headscale** (self-hosted, open source); the only difference is a
+`--login-server` URL.
+
+This is an **optional module** — it ships as a separate image so the core base
+image stays lean.
+
+```bash
+just build-mesh          # builds workspace-mesh:latest (FROM workspace-base + tailscale)
+```
+
+Copy the mesh config into your project (alongside the others) and bring the
+workspace up:
+
+```bash
+cp -r "$DW/template/.devcontainer/mesh" .devcontainer/
+devcontainer up --workspace-folder . --config .devcontainer/mesh/devcontainer.json
+```
+
+Then join the mesh. The auth key is a secret, so it's passed at exec time via
+`--remote-env` (never baked, never on disk). Use an **ephemeral, tagged**
+pre-auth key so disposable workspaces auto-expire from your tailnet.
+
+```bash
+# Tailscale (SaaS):
+devcontainer exec --workspace-folder . --config .devcontainer/mesh/devcontainer.json \
+  --remote-env TS_AUTHKEY=tskey-auth-… \
+  sudo -E mesh-up
+
+# Headscale (self-hosted) — same command + a login server:
+devcontainer exec --workspace-folder . --config .devcontainer/mesh/devcontainer.json \
+  --remote-env TS_AUTHKEY=… --remote-env TS_LOGIN_SERVER=https://headscale.example \
+  sudo -E mesh-up
+```
+
+Create a Headscale key with:
+`headscale preauthkeys create --user <id> --ephemeral --tags tag:ws`.
+
+`mesh-up` accepts more knobs via `--remote-env`: `TS_HOSTNAME`, `TS_TAGS`,
+`TS_ACCEPT_ROUTES=1`, `TS_EXIT_NODE`, `TS_USERSPACE=1` (no `/dev/net/tun`
+needed; apps then use the SOCKS5/HTTP proxy on `localhost:1055`), and
+`TS_EXTRA_ARGS`.
+
+### Egress containment over the mesh (optional, on top)
+
+To make the mesh the workspace's **only** path out — deny all egress except the
+tunnel — run, after joining:
+
+```bash
+devcontainer exec --workspace-folder . --config .devcontainer/mesh/devcontainer.json \
+  --remote-env TS_LOGIN_SERVER=https://headscale.example \
+  sudo -E mesh-firewall
+```
+
+It permits loopback, DNS, the `tailscale0` interface, and the control/relay
+host(s) needed to keep the tunnel alive (the Headscale host, or for SaaS
+`controlplane.tailscale.com` + `log.tailscale.io`; pin others with
+`TS_CONTROL_HOSTS`). Everything else is dropped, IPv4 and IPv6.
+
+> **Status — not yet validated against a live control server.** The mesh image
+> builds and `tailscaled` runs, but the actual join and egress-containment were
+> not tested end to end (that needs a real Tailscale/Headscale endpoint + key).
+> Treat this module as ready-to-try, not battle-tested; verify against your own
+> control server. For SaaS, DERP relays aren't enumerable by IP, so strict
+> containment is most reliable with Headscale or an explicit `TS_CONTROL_HOSTS`.
 
 ## Customization
 

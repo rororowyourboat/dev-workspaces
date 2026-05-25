@@ -1,0 +1,43 @@
+{
+  "name": "workspace-mesh",
+  "image": "workspace-mesh:latest",
+  "workspaceFolder": "/workspace",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
+  "remoteUser": "vscode",
+  "updateRemoteUserUID": true,
+  "overrideCommand": true,
+  "init": true,
+
+  "runArgs": [
+    "--device=/dev/net/tun",
+    "--pids-limit=2048",
+    "--memory=4g",
+    "--cpus=2"
+  ],
+
+  "_comment": "Mesh profile: needs /dev/net/tun + NET_ADMIN for the Tailscale client and omits no-new-privileges so sudo can start tailscaled and run iptables. Less hardened than the default workspace; isolation comes from joining the mesh and (optionally) `mesh-firewall` locking egress to the tunnel. Requires `just build-mesh`. Join with: devcontainer exec ... --remote-env TS_AUTHKEY=... [--remote-env TS_LOGIN_SERVER=...] sudo -E mesh-up",
+  "capAdd": ["NET_ADMIN", "NET_RAW"],
+
+  "mounts": [
+    "source=ws-uv-cache-${devcontainerId},target=/home/vscode/.cache/uv,type=volume",
+    "source=ws-npm-cache-${devcontainerId},target=/home/vscode/.npm,type=volume",
+    "source=ws-pnpm-store-${devcontainerId},target=/home/vscode/.local/share/pnpm/store,type=volume",
+    "source=ws-bun-cache-${devcontainerId},target=/home/vscode/.cache/bun,type=volume"
+  ],
+
+  "containerEnv": {
+    "NPM_CONFIG_IGNORE_SCRIPTS": "true",
+    "PIP_DISABLE_PIP_VERSION_CHECK": "1"
+  },
+
+  "customizations": {
+    "vscode": {
+      "extensions": [],
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "git.enableCommitSigning": false,
+        "telemetry.telemetryLevel": "off"
+      }
+    }
+  }
+}

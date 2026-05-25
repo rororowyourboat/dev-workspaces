@@ -52,6 +52,22 @@ TCP 80/443 to a built-in host list plus anything in the allowlist file. Sets an
 allowlist hostnames to IPs once at start (TOCTOU-acceptable for this use case)
 and warns on hosts it cannot resolve rather than silently dropping them.
 
+### Mesh module (`mesh/`, optional)
+
+A separate `workspace-mesh:latest` image (`FROM workspace-base` + the Tailscale
+client) keeps the base lean. One connector script, `mesh-up`, joins either
+**Tailscale** (SaaS) or **Headscale** (self-hosted) — the only difference is the
+`--login-server` URL — driven entirely by `TS_*` environment variables passed
+at exec time via `--remote-env`, so the auth key is never baked or written to
+disk. Kernel mode (`--device=/dev/net/tun` + `NET_ADMIN`) is the default;
+`TS_USERSPACE=1` falls back to userspace networking with a SOCKS/HTTP proxy and
+no extra privileges. `mesh-firewall` is an optional second step that locks
+egress to the tunnel only (default-deny except loopback, DNS, `tailscale0`, and
+the control/relay hosts), IPv4 and IPv6. Like the firewall profile, the mesh
+profile is intentionally less hardened than the default (it needs root for
+`tailscaled`/iptables); its guarantee comes from the overlay + ACLs and the
+optional egress lock, not from blocking in-container root.
+
 ## Secrets
 
 Never persisted. Secrets are resolved on the host by whatever manager the user
