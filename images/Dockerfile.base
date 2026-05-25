@@ -14,7 +14,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && ln -s "$(command -v fdfind)" /usr/local/bin/fd \
     && ln -s "$(command -v batcat)" /usr/local/bin/bat
 
-# 2. Non-root user (UID adjusted at runtime via updateRemoteUserUID)
+# 2. Non-root user (UID adjusted at runtime via updateRemoteUserUID).
+# Passwordless sudo is intentional: apt installs and the opt-in egress
+# firewall (postStartCommand) need root. This is the standard devcontainer
+# trade-off; isolation comes from --cap-drop=ALL + the single-project mount,
+# not from blocking in-container root.
 RUN useradd -m -s /bin/bash -u 1000 vscode \
     && echo 'vscode ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/vscode
 
@@ -35,7 +39,7 @@ RUN mkdir -p "$NVM_DIR" \
     && . "$NVM_DIR/nvm.sh" \
     && nvm install "$NODE_VERSION" \
     && nvm alias default "$NODE_VERSION" \
-    && corepack enable && corepack prepare pnpm@latest --activate \
+    && corepack enable && corepack prepare pnpm@11.1.2 --activate \
     && npm config set ignore-scripts true --location=global
 
 # 6. Agents — Claude Code + pi-coding-agent (scripts ignored)
@@ -43,7 +47,9 @@ RUN . "$NVM_DIR/nvm.sh" \
     && npm install -g --ignore-scripts @anthropic-ai/claude-code @earendil-works/pi-coding-agent
 
 # 7. Make node/npm/pnpm available on PATH for non-login shells
-RUN ln -s "$NVM_DIR/versions/node/$(. $NVM_DIR/nvm.sh && nvm version default)/bin/"* /usr/local/bin/ || true
+RUN NV="$(. "$NVM_DIR/nvm.sh" && nvm version default)" \
+    && test -n "$NV" \
+    && ln -sf "$NVM_DIR/versions/node/$NV/bin/"* /usr/local/bin/
 
 # 8. Repo-provided scripts + dotfiles (build context = repo root)
 COPY scripts/pkg-age-check /usr/local/bin/pkg-age-check
