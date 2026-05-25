@@ -130,8 +130,10 @@ rebuilds/installs are fast and survive container removal:
 - `~/.cache/uv`, pnpm store (`~/.local/share/pnpm/store`), `~/.npm`,
   `~/.cache/bun`
 
-Volume names follow the workspace (e.g. `<workspace>-uv-cache`). Caches are
-the only persisted state besides the bind-mounted project dir.
+Volume names are keyed by `${devcontainerId}` (e.g. `ws-uv-cache-<id>`), not
+the workspace folder name, so two clients with same-named project dirs never
+share a cache volume. Caches are the only persisted state besides the
+bind-mounted project dir.
 
 ### 6. Secret-leak pre-commit
 
@@ -164,10 +166,18 @@ secrets are in these files.
 Default workspaces are network-on. A workspace may opt into a locked-down
 egress allowlist (adapted from Anthropic's devcontainer `init-firewall.sh`):
 default-deny outbound, allow only an allowlist (npm, PyPI, GitHub, the
-client's own APIs). Trade-off: requires `--cap-add=NET_ADMIN`, which
-partially relaxes the `--cap-drop=ALL` hardening — so it's opt-in per client,
-chosen when egress control matters more than minimal capabilities. The
-allowlist is a per-workspace config file.
+client's own APIs). Enabled via the native `capAdd: ["NET_ADMIN"]` property
+(while `--cap-drop=ALL` stays in `runArgs`) plus a `postStartCommand` running
+the firewall script on every start. Trade-off: `NET_ADMIN` partially relaxes
+the `--cap-drop=ALL` hardening — so it's opt-in per client, chosen when egress
+control matters more than minimal capabilities. The allowlist is a
+per-workspace config file.
+
+> **Note (containers.dev best practices, verified via Context7):** persistent
+> containers also set `"init": true` (tini reaps zombie processes); cache
+> volumes use `${devcontainerId}` for stable per-container uniqueness; and
+> `capAdd`/`securityOpt`/`init` are first-class devcontainer.json properties
+> (only `--cap-drop` must go through `runArgs`).
 
 ## Migration of existing devcontainers
 

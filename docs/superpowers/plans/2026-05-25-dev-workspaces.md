@@ -530,6 +530,7 @@ Create `template/.devcontainer/devcontainer.json`:
   "remoteUser": "vscode",
   "updateRemoteUserUID": true,
   "overrideCommand": true,
+  "init": true,
 
   "runArgs": [
     "--cap-drop=ALL",
@@ -540,10 +541,10 @@ Create `template/.devcontainer/devcontainer.json`:
   ],
 
   "mounts": [
-    "source=${localWorkspaceFolderBasename}-uv-cache,target=/home/vscode/.cache/uv,type=volume",
-    "source=${localWorkspaceFolderBasename}-npm-cache,target=/home/vscode/.npm,type=volume",
-    "source=${localWorkspaceFolderBasename}-pnpm-store,target=/home/vscode/.local/share/pnpm/store,type=volume",
-    "source=${localWorkspaceFolderBasename}-bun-cache,target=/home/vscode/.cache/bun,type=volume",
+    "source=ws-uv-cache-${devcontainerId},target=/home/vscode/.cache/uv,type=volume",
+    "source=ws-npm-cache-${devcontainerId},target=/home/vscode/.npm,type=volume",
+    "source=ws-pnpm-store-${devcontainerId},target=/home/vscode/.local/share/pnpm/store,type=volume",
+    "source=ws-bun-cache-${devcontainerId},target=/home/vscode/.cache/bun,type=volume",
     "source=${localEnv:HOME}/.config/starship.toml,target=/etc/skel-dotfiles/starship.toml,type=bind,readonly"
   ],
 
@@ -565,10 +566,12 @@ Create `template/.devcontainer/devcontainer.json`:
 }
 ```
 
-> **Opt-in firewall:** to enable for a workspace, add `"--cap-add=NET_ADMIN"` to
-> `runArgs`, mount `init-firewall.sh`, and add a `postStartCommand` that runs
-> `sudo bash /usr/local/bin/init-firewall.sh`. Left out of the default template
-> because it relaxes `--cap-drop=ALL` (design §9).
+> **Opt-in firewall:** to enable for a workspace, add the native
+> `"capAdd": ["NET_ADMIN"]` property (keep `--cap-drop=ALL` in `runArgs`),
+> mount `init-firewall.sh`, and add a `postStartCommand` that runs
+> `sudo bash /usr/local/bin/init-firewall.sh` (postStart, not postCreate, so
+> the iptables rules are re-applied on every container start). Left out of the
+> default template because it relaxes `--cap-drop=ALL` (design §9).
 
 - [ ] **Step 2: Write the pre-commit hook**
 
