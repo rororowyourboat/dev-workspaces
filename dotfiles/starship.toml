@@ -1,79 +1,15 @@
-# Starship Prompt — Kanagawa Wave Theme
-
-format = """
-$username\
-$hostname\
-$directory\
-$git_branch\
-$git_status\
-$python\
-$nodejs\
-$docker_context\
-$cmd_duration\
-$line_break\
-$character"""
-
-[username]
-style_user = "#C8C093"       # oldWhite
-format = "[$user]($style) "
-show_always = true
-
-[hostname]
-style = "#957FB8"            # oniViolet
-format = "[@$ssh_symbol$hostname]($style) "
-ssh_only = false
-ssh_symbol = ""
-aliases = { "rohan-ASUS-Zenbook-Duo-UX8406MA-UX8406MA" = "zenbook", "rohan-ROG-Zephyrus-G14-GA401QM-GA401QM" = "rog", "srv806765" = "vps" }
-
-[directory]
-style = "#7E9CD8"            # crystalBlue
-format = "in [$path]($style)[$read_only]($read_only_style) "
-truncation_length = 3
-truncate_to_repo = true
-read_only = " ro"
-read_only_style = "#C34043"  # autumnRed
-
-[git_branch]
-style = "#98BB6C"            # springGreen
-format = "on [$symbol$branch]($style) "
-symbol = ""
-
-[git_status]
-style = "#DCA561"            # autumnYellow
-format = '([$all_status$ahead_behind]($style) )'
-conflicted = "="
-ahead = "⇡${count}"
-behind = "⇣${count}"
-diverged = "⇕⇡${ahead_count}⇣${behind_count}"
-untracked = "?${count}"
-stashed = "*${count}"
-modified = "!${count}"
-staged = "+${count}"
-deleted = "✘${count}"
-
-[python]
-style = "#E6C384"            # carpYellow
-format = "via [$symbol$version( \\($virtualenv\\))]($style) "
-symbol = "py "
-
-[nodejs]
-style = "#98BB6C"            # springGreen
-format = "via [$symbol$version]($style) "
-symbol = "node "
-
-[docker_context]
-style = "#7FB4CA"            # springBlue
-format = "via [$symbol$context]($style) "
-symbol = "docker "
-
-[cmd_duration]
-style = "#FF9E3B"            # roninYellow
-format = "took [$duration]($style) "
-min_time = 2_000
+# Minimal default Starship prompt for dev-workspaces containers.
+# Personalize by bind-mounting your own over /etc/skel-dotfiles/starship.toml
+# or by using `devcontainer up --dotfiles-repository <url>`. See README.
+add_newline = true
 
 [character]
-success_symbol = "[❯](bold #98BB6C)"   # springGreen
-error_symbol = "[❯](bold #FF5D62)"     # peachRed
+success_symbol = "[\\$](bold green)"
+error_symbol = "[\\$](bold red)"
 
-[line_break]
-disabled = false
+[directory]
+truncation_length = 4
+truncate_to_repo = true
+
+[cmd_duration]
+min_time = 2000

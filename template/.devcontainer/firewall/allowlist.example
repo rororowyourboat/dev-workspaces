@@ -1,0 +1,11 @@
+# Egress allowlist for the firewalled workspace variant.
+# One hostname per line. Lines starting with # are ignored.
+# The firewall already permits DNS, loopback, and the built-in defaults
+# (npm, PyPI, GitHub). Add any extra hosts your project needs to reach.
+#
+# To use: copy this file to `allowlist` (no extension) in this firewall
+# directory, edit it, then start the workspace with:
+#   devcontainer up --workspace-folder . --config .devcontainer/firewall/devcontainer.json
+
+# api.anthropic.com
+# your-internal-api.example.com

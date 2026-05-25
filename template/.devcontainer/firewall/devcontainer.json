@@ -1,5 +1,5 @@
 {
-  "name": "workspace",
+  "name": "workspace-firewalled",
   "image": "workspace-base:latest",
   "workspaceFolder": "/workspace",
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
@@ -9,24 +9,28 @@
   "init": true,
 
   "runArgs": [
-    "--cap-drop=ALL",
-    "--security-opt=no-new-privileges",
     "--pids-limit=2048",
     "--memory=4g",
     "--cpus=2"
   ],
 
+  "_comment": "This profile keeps default Docker capabilities + NET_ADMIN and omits no-new-privileges so sudo can run iptables for the egress firewall. It is intentionally less hardened than the default workspace; the egress allowlist is the isolation mechanism here.",
+  "capAdd": ["NET_ADMIN"],
+
   "mounts": [
     "source=ws-uv-cache-${devcontainerId},target=/home/vscode/.cache/uv,type=volume",
     "source=ws-npm-cache-${devcontainerId},target=/home/vscode/.npm,type=volume",
     "source=ws-pnpm-store-${devcontainerId},target=/home/vscode/.local/share/pnpm/store,type=volume",
-    "source=ws-bun-cache-${devcontainerId},target=/home/vscode/.cache/bun,type=volume"
+    "source=ws-bun-cache-${devcontainerId},target=/home/vscode/.cache/bun,type=volume",
+    "source=${localWorkspaceFolder}/.devcontainer/firewall/allowlist,target=/etc/workspace-allowlist,type=bind,readonly"
   ],
 
   "containerEnv": {
     "NPM_CONFIG_IGNORE_SCRIPTS": "true",
     "PIP_DISABLE_PIP_VERSION_CHECK": "1"
   },
+
+  "postStartCommand": "sudo /usr/local/bin/init-firewall.sh",
 
   "customizations": {
     "vscode": {

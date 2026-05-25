@@ -6,19 +6,21 @@ ENV DEBIAN_FRONTEND=noninteractive \
     NVM_DIR=/usr/local/nvm \
     HOME=/home/vscode
 
-# 1. Base CLI tooling
+# 1. Base CLI tooling. iptables is included so the opt-in egress firewall
+# (docs/firewall) works out of the box without a network round-trip at start.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ca-certificates curl git bash sudo \
+      ca-certificates curl git bash sudo iptables \
       ripgrep fd-find bat fzf jq tree \
     && rm -rf /var/lib/apt/lists/* \
     && ln -s "$(command -v fdfind)" /usr/local/bin/fd \
     && ln -s "$(command -v batcat)" /usr/local/bin/bat
 
 # 2. Non-root user (UID adjusted at runtime via updateRemoteUserUID).
-# Passwordless sudo is intentional: apt installs and the opt-in egress
-# firewall (postStartCommand) need root. This is the standard devcontainer
-# trade-off; isolation comes from --cap-drop=ALL + the single-project mount,
-# not from blocking in-container root.
+# Passwordless sudo is configured for profiles that allow it. NOTE: in the
+# default (max-lockdown) workspace, --cap-drop=ALL + no-new-privileges make
+# sudo non-functional by design (no in-container root, no apt) — use uv/pnpm
+# for deps. The firewall profile keeps default caps + NET_ADMIN and omits
+# no-new-privileges, so sudo works there to run iptables at start.
 RUN useradd -m -s /bin/bash -u 1000 vscode \
     && echo 'vscode ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/vscode
 
@@ -54,8 +56,9 @@ RUN NV="$(. "$NVM_DIR/nvm.sh" && nvm version default)" \
 # 8. Repo-provided scripts + dotfiles (build context = repo root)
 COPY scripts/pkg-age-check /usr/local/bin/pkg-age-check
 COPY scripts/install-shims.sh /usr/local/lib/install-shims.sh
+COPY images/init-firewall.sh /usr/local/bin/init-firewall.sh
 COPY dotfiles/ /etc/skel-dotfiles/
-RUN chmod +x /usr/local/bin/pkg-age-check \
+RUN chmod +x /usr/local/bin/pkg-age-check /usr/local/bin/init-firewall.sh \
     && echo '. /etc/skel-dotfiles/bash_aliases.sh' >> /home/vscode/.bashrc \
     && chown -R vscode:vscode /home/vscode
 
