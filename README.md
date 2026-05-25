@@ -26,6 +26,111 @@ and compatible with VS Code "Reopen in Container" since it's just a standard
   are fast and never shared across projects.
 - **Opt-in egress firewall:** default-deny outbound with an editable allowlist.
 
+## Architecture
+
+> **Legend:** 🔒 = enforced safety boundary (loosening it reduces isolation —
+> change only deliberately) · ⚙ = customization point (safe to tune per project).
+
+The host is trusted; the container is where untrusted code and agents run. The
+container boundary plus a stack of enforced controls is what keeps that code
+contained. Egress is the one part that changes per **profile**.
+
+```text
+ LEGEND   🔒 enforced safety boundary        ⚙ customizable knob
+
+┌──────────────────────────────────────────────────────────────────────┐
+│ HOST  (trusted)                                                        │
+│                                                                        │
+│   secret manager (op / env / Vault)            ⚙ bring your own        │
+│        │  resolves KEY=value on the host                               │
+│        │  passed via --remote-env → in memory only, never on disk      │
+│   devcontainer CLI                                                     │
+│   ./your-project ──────────────┐  (only this directory is mounted)     │
+└────────────────────────────────┼──────────────────────────────────────┘
+                                  │
+         ═══════════ CONTAINER BOUNDARY 🔒 ═══════════
+┌────────────────────────────────▼──────────────────────────────────────┐
+│ WORKSPACE CONTAINER  (runs untrusted code + agents)                    │
+│                                                                        │
+│  image: workspace-base — reproducible, built once   ⚙ extend via FROM  │
+│  agents: pi · claude      tooling: uv · node · pnpm · ripgrep · …       │
+│                                                                        │
+│  🔒 filesystem : only ./your-project is visible at /workspace          │
+│  🔒 caps       : --cap-drop=ALL                                        │
+│  🔒 privilege  : no-new-privileges  (default profile ⇒ no root / apt)  │
+│  🔒 supply     : pkg-age-check ≥5d (⚙ threshold) · npm ignore-scripts  │
+│  🔒 commits    : gitleaks pre-commit hook                              │
+│  ⚙  limits     : --memory · --cpus · --pids-limit                      │
+└────────────────────────────────┬───────────────────────────────────────┘
+                                  │  EGRESS — depends on the chosen profile
+        ┌─────────────────────────┼─────────────────────────────┐
+        ▼                         ▼                             ▼
+  ┌────────────┐         ┌────────────────────┐       ┌─────────────────────┐
+  │ DEFAULT    │         │ FIREWALL           │       │ MESH (optional)     │
+  │ open       │         │ 🔒 default-deny     │       │ 🔒 deny-all-except- │
+  │ internet   │         │    + allowlist ⚙    │       │    mesh             │
+  │ egress     │         │ (npm,pypi,gh,+yours)│       │ via Headscale ⚙     │
+  └────────────┘         └────────────────────┘       └─────────────────────┘
+   least setup            controlled egress             egress containment
+```
+
+The same picture as a Mermaid diagram (renders on GitHub):
+
+```mermaid
+flowchart TB
+  subgraph HOST["🖥️  HOST — trusted"]
+    SEC["Secret manager<br/>(op / env / Vault)"]:::custom
+    CLI["devcontainer CLI"]
+    PROJ["./your-project"]
+  end
+
+  SEC -- "--remote-env: in memory, never on disk" --> WS
+  PROJ -- "bind mount: this dir ONLY" --> MNT
+
+  subgraph CONT["📦  WORKSPACE CONTAINER — untrusted code + agents"]
+    direction TB
+    WS["workspace-base image<br/>agents: pi · claude · uv/node/pnpm"]:::custom
+    MNT["filesystem: only /workspace"]:::safe
+    CAP["--cap-drop=ALL"]:::safe
+    NNP["no-new-privileges<br/>default ⇒ no root"]:::safe
+    SUP["pkg-age-check ≥5d · npm ignore-scripts"]:::safe
+    GL["gitleaks pre-commit"]:::safe
+    LIM["mem / cpu / pids limits"]:::custom
+    WS --> MNT --> CAP --> NNP --> SUP --> GL --> LIM
+  end
+
+  LIM --> PROF{"Egress profile"}
+  PROF -- default --> E1["🌐 Open internet egress"]:::custom
+  PROF -- firewall --> E2["default-deny + allowlist"]:::safe
+  PROF -- "mesh (optional)" --> E3["deny-all-except-mesh<br/>via Headscale"]:::safe
+
+  classDef safe fill:#ffe3e3,stroke:#c92a2a,stroke-width:2px,color:#000;
+  classDef custom fill:#e3f2ff,stroke:#1971c2,stroke-dasharray:5 3,color:#000;
+```
+
+In both diagrams, **red / 🔒 nodes are the safety boundary** (mount isolation,
+dropped capabilities, no-privilege-escalation, supply-chain and secret-leak
+guards, and — in the firewall/mesh profiles — egress restriction). **Blue /
+dashed / ⚙ nodes are yours to customize.** The default profile is the most
+locked down (no in-container root); the firewall and mesh profiles deliberately
+relax capabilities to enforce egress control instead (see
+[Egress firewall](#egress-firewall-opt-in) and the Mesh notes).
+
+### Configuration reference
+
+| Knob | Where | Default | Safety-sensitive? |
+|---|---|---|---|
+| Project mount | `workspaceMount` | the project dir only | 🔒 don't widen |
+| Capabilities | `runArgs` `--cap-drop` | `ALL` (default profile) | 🔒 keep dropped |
+| Privilege escalation | `runArgs` `no-new-privileges` | on (default profile) | 🔒 keep on |
+| Resource limits | `runArgs` `--memory`/`--cpus`/`--pids-limit` | 4g / 2 / 2048 | ⚙ tune freely |
+| Package age rule | `PKG_MIN_AGE_DAYS` env | 5 days | ⚙ lowering weakens supply-chain |
+| npm install scripts | `NPM_CONFIG_IGNORE_SCRIPTS` | `true` | 🔒 keep on |
+| Extra tools / deps | custom image `FROM workspace-base:latest` | — | ⚙ |
+| Prompt / dotfiles | bind `starship.toml` or `--dotfiles-repository` | minimal | ⚙ |
+| Egress allowlist | `.devcontainer/firewall/allowlist` | npm · PyPI · GitHub | ⚙ firewall profile |
+| Mesh control server | `HEADSCALE_URL` / `TS_AUTHKEY` (`--remote-env`) | — | ⚙ mesh profile |
+
 ## Prerequisites
 
 - Docker
