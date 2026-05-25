@@ -1,0 +1,58 @@
+FROM debian:bookworm-slim
+
+ARG NVM_VERSION=v0.40.4
+ARG NODE_VERSION=24
+ENV DEBIAN_FRONTEND=noninteractive \
+    NVM_DIR=/usr/local/nvm \
+    HOME=/home/vscode
+
+# 1. Base CLI tooling
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates curl git bash sudo \
+      ripgrep fd-find bat fzf jq tree \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -s "$(command -v fdfind)" /usr/local/bin/fd \
+    && ln -s "$(command -v batcat)" /usr/local/bin/bat
+
+# 2. Non-root user (UID adjusted at runtime via updateRemoteUserUID)
+RUN useradd -m -s /bin/bash -u 1000 vscode \
+    && echo 'vscode ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/vscode
+
+# 3. starship + just + gitleaks (pinned)
+RUN curl -fsSL https://starship.rs/install.sh | sh -s -- -y \
+    && curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh \
+       | bash -s -- --to /usr/local/bin \
+    && GL_VER=8.21.2 \
+    && curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${GL_VER}/gitleaks_${GL_VER}_linux_x64.tar.gz" \
+       | tar -xz -C /usr/local/bin gitleaks
+
+# 4. uv (Python) — system-wide
+RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
+
+# 5. nvm + Node + pnpm (corepack), npm hardened
+RUN mkdir -p "$NVM_DIR" \
+    && curl -o- "https://raw.githubusercontent.com/nvm-sh/nvm/${NVM_VERSION}/install.sh" | bash \
+    && . "$NVM_DIR/nvm.sh" \
+    && nvm install "$NODE_VERSION" \
+    && nvm alias default "$NODE_VERSION" \
+    && corepack enable && corepack prepare pnpm@latest --activate \
+    && npm config set ignore-scripts true --location=global
+
+# 6. Agents — Claude Code + pi-coding-agent (scripts ignored)
+RUN . "$NVM_DIR/nvm.sh" \
+    && npm install -g --ignore-scripts @anthropic-ai/claude-code @earendil-works/pi-coding-agent
+
+# 7. Make node/npm/pnpm available on PATH for non-login shells
+RUN ln -s "$NVM_DIR/versions/node/$(. $NVM_DIR/nvm.sh && nvm version default)/bin/"* /usr/local/bin/ || true
+
+# 8. Repo-provided scripts + dotfiles (build context = repo root)
+COPY scripts/pkg-age-check /usr/local/bin/pkg-age-check
+COPY scripts/install-shims.sh /usr/local/lib/install-shims.sh
+COPY dotfiles/ /etc/skel-dotfiles/
+RUN chmod +x /usr/local/bin/pkg-age-check \
+    && echo '. /etc/skel-dotfiles/bash_aliases.sh' >> /home/vscode/.bashrc \
+    && chown -R vscode:vscode /home/vscode
+
+USER vscode
+WORKDIR /workspace
+CMD ["sleep", "infinity"]
